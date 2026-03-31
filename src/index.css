@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+
+/**
+ * App shell: Vite + Tailwind v4 entry stylesheet.
+ * Poster page uses Tailwind utilities; keep global reset minimal.
+ */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
