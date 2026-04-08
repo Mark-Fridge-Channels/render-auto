@@ -57,16 +57,7 @@ app.use(express.json({ limit: '10mb' }))
 app.use('/uploads', express.static(uploadsDir))
 app.use((req, res, next) => {
   cleanupAuthState()
-  const openApi =
-    req.path === '/api/health' ||
-    req.path === '/api/auth/challenge' ||
-    req.path === '/api/auth/login' ||
-    req.path === '/api/auth/session' ||
-    req.path === '/api/auth/logout' ||
-    req.path === '/api/render-asset'
-  if (!req.path.startsWith('/api') || openApi) return next()
-  const user = getSessionUser(req)
-  if (!user) return res.status(401).json({ error: 'unauthorized' })
+  // Keep auth state cleanup, but allow all API routes without requiring login.
   return next()
 })
 
