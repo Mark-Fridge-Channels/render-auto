@@ -4,7 +4,22 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: 'api-request-logger',
+      configureServer(server) {
+        server.middlewares.use((req, _res, next) => {
+          const url = req.url || ''
+          if (url.startsWith('/api') || url.startsWith('/uploads')) {
+            console.log(`[vite] ${req.method} ${url}`)
+          }
+          next()
+        })
+      },
+    },
+  ],
   server: {
     host: '0.0.0.0',
     proxy: {

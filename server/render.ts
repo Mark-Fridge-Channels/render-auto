@@ -48,6 +48,12 @@ function toRuntimeAssetUrl(appUrl: string, rawUrl: string): string {
   return `/api/render-asset?url=${encodeURIComponent(absolute.toString())}`
 }
 
+function withCacheBust(url: string, token: string): string {
+  if (!url) return url
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}cb=${encodeURIComponent(token)}`
+}
+
 function scalePayloadToExport(payload: z.infer<typeof payloadSchema>) {
   const cW = Math.max(1, Number(payload.config.canvas.width || payload.config.export.width))
   const cH = Math.max(1, Number(payload.config.canvas.height || payload.config.export.height))
@@ -142,6 +148,27 @@ export async function renderBatchWithChromium(input: {
       try {
         const payload = payloadSchema.parse(tpl.payload)
         const page = await context.newPage()
+        // Attach debug listeners from page to server logs to diagnose render timeouts
+        page.on('console', (msg) => {
+          try {
+            const text = msg.text()
+            console.log(`[playwright:${tpl.name}] console ${msg.type()}: ${text}`)
+          } catch (e) {
+            console.log('[playwright] console event error', e)
+          }
+        })
+        page.on('pageerror', (err) => {
+          console.log(`[playwright:${tpl.name}] pageerror: ${err?.message ?? String(err)}`)
+        })
+        page.on('requestfailed', (req) => {
+          const failure = req.failure()
+          console.log(`[playwright:${tpl.name}] requestfailed: ${req.url()} ${failure?.errorText ?? ''}`)
+        })
+        page.on('response', (res) => {
+          try {
+            console.log(`[playwright:${tpl.name}] response ${res.status()} ${res.url()}`)
+          } catch {}
+        })
         const exportWidth = Math.max(1, Number(payload.config.export.width || 1600))
         const exportHeight = Math.max(1, Number(payload.config.export.height || 2000))
         await page.setViewportSize({
@@ -152,24 +179,40 @@ export async function renderBatchWithChromium(input: {
         if (typeof scaled.config.backgroundImageUrl === 'string') {
           scaled.config.backgroundImageUrl = toRuntimeAssetUrl(appUrl, scaled.config.backgroundImageUrl)
         }
-        const runtimeProductImageUrl = toRuntimeAssetUrl(appUrl, input.productImageUrl)
+        // Force each render to re-fetch product bitmap; avoids stale proxy/browser cache.
+        const runtimeProductImageUrl = withCacheBust(
+          toRuntimeAssetUrl(appUrl, input.productImageUrl),
+          `${input.batchId}:${tpl.id}`,
+        )
         await page.addInitScript((p) => {
           ;(window as Window & { __RENDER_PAYLOAD__?: unknown }).__RENDER_PAYLOAD__ = p
         }, { ...scaled, productImageUrl: runtimeProductImageUrl })
 
         const url = new URL('/render-runtime', appUrl)
+        console.log(`[playwright:${tpl.name}] navigating to ${url.toString()} (appUrl=${appUrl})`)
         await page.goto(url.toString(), { waitUntil: 'domcontentloaded' })
-        await page.waitForFunction(
-          () => {
-            const w = window as Window & {
-              __RENDER_EXPORT_DATA_URL__?: string
-              __RENDER_EXPORT_ERROR__?: string
-            }
-            return Boolean(w.__RENDER_EXPORT_DATA_URL__ || w.__RENDER_EXPORT_ERROR__)
-          },
-          undefined,
-          { timeout: 45000 },
-        )
+        try {
+          await page.waitForFunction(
+            () => {
+              const w = window as Window & {
+                __RENDER_EXPORT_DATA_URL__?: string
+                __RENDER_EXPORT_ERROR__?: string
+              }
+              return Boolean(w.__RENDER_EXPORT_DATA_URL__ || w.__RENDER_EXPORT_ERROR__)
+            },
+            undefined,
+            { timeout: 45000 },
+          )
+        } catch (err) {
+          console.log(`[playwright:${tpl.name}] waitForFunction timeout or error: ${err}`)
+          try {
+            const html = await page.content()
+            console.log(`[playwright:${tpl.name}] page html snapshot length=${html.length}`)
+          } catch (e) {
+            console.log(`[playwright:${tpl.name}] failed to read page content: ${e}`)
+          }
+          throw err
+        }
         const exportState = await page.evaluate(() => {
           const w = window as Window & {
             __RENDER_EXPORT_DATA_URL__?: string

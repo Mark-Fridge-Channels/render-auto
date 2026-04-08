@@ -14,6 +14,7 @@ type RuntimeWindow = Window & {
   __RENDER_PAYLOAD__?: unknown
   __RENDER_EXPORT_DATA_URL__?: string
   __RENDER_EXPORT_ERROR__?: string
+  __RENDER_RUNTIME_STATE__?: string
 }
 
 function readRuntimePayload(): RuntimePayload | null {
@@ -32,10 +33,15 @@ export function RenderRuntimePage() {
   const [bakeFailed, setBakeFailed] = useState(false)
 
   useEffect(() => {
+    ;(window as RuntimeWindow).__RENDER_RUNTIME_STATE__ = 'boot'
+  }, [])
+
+  useEffect(() => {
     let disposed = false
     if (bakedPngUrl || bakeFailed) return
     const root = document.querySelector('[data-render-root="true"]') as HTMLElement | null
     if (!root) return
+    ;(window as RuntimeWindow).__RENDER_RUNTIME_STATE__ = 'waiting-source'
 
     const check = () => {
       if (disposed) return
@@ -45,6 +51,7 @@ export function RenderRuntimePage() {
       const imgsReady = imgs.every((img) => img.complete)
       const productReady = root.querySelector('canvas[data-product-ready="true"]') !== null
       if (imgsReady && productReady) {
+        ;(window as RuntimeWindow).__RENDER_RUNTIME_STATE__ = 'source-ready'
         setSourceReady(true)
         return
       }
@@ -62,6 +69,7 @@ export function RenderRuntimePage() {
     if (!sourceReady || bakedPngUrl || bakeFailed || !payload) return
     const root = document.querySelector('[data-render-root="true"]') as HTMLElement | null
     if (!root) return
+    ;(window as RuntimeWindow).__RENDER_RUNTIME_STATE__ = 'baking'
 
     void (async () => {
       try {
@@ -73,11 +81,13 @@ export function RenderRuntimePage() {
         })
         if (cancelled) return
         ;(window as RuntimeWindow).__RENDER_EXPORT_DATA_URL__ = dataUrl
+        ;(window as RuntimeWindow).__RENDER_RUNTIME_STATE__ = 'done'
         setBakedPngUrl(dataUrl)
       } catch {
         if (cancelled) return
         const w = window as RuntimeWindow
         w.__RENDER_EXPORT_ERROR__ = 'html-to-image pre-bake failed (possibly CORS/tainted canvas)'
+        w.__RENDER_RUNTIME_STATE__ = 'failed-bake'
         setBakeFailed(true)
       }
     })()
@@ -86,6 +96,24 @@ export function RenderRuntimePage() {
       cancelled = true
     }
   }, [sourceReady, bakedPngUrl, bakeFailed, payload])
+
+  useEffect(() => {
+    if (bakedPngUrl || bakeFailed) return
+    const timeoutMs = 25000
+    const t = window.setTimeout(() => {
+      const w = window as RuntimeWindow
+      if (w.__RENDER_EXPORT_DATA_URL__ || w.__RENDER_EXPORT_ERROR__) return
+      const root = document.querySelector('[data-render-root="true"]') as HTMLElement | null
+      const imgCount = root ? root.querySelectorAll('img').length : 0
+      const productReady = root ? root.querySelector('canvas[data-product-ready="true"]') !== null : false
+      const state = w.__RENDER_RUNTIME_STATE__ || 'unknown'
+      w.__RENDER_EXPORT_ERROR__ =
+        `runtime ready timeout ${timeoutMs}ms (state=${state}, imgCount=${imgCount}, productReady=${productReady})`
+      w.__RENDER_RUNTIME_STATE__ = 'failed-timeout'
+      setBakeFailed(true)
+    }, timeoutMs)
+    return () => window.clearTimeout(t)
+  }, [bakedPngUrl, bakeFailed])
 
   if (!payload) {
     return (

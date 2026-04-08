@@ -13,6 +13,28 @@ import { renderBatchWithChromium } from './render'
 loadEnv()
 
 const app = express()
+
+// Request logging middleware — logs every request with status and duration.
+app.use((req, res, next) => {
+  const startedAt = process.hrtime.bigint()
+  const now = new Date().toISOString()
+  const method = req.method
+  const url = req.originalUrl || req.url
+  const ip = req.ip
+
+  console.log(`[${now}] -> ${method} ${url} (${ip})`)
+
+  res.on('finish', () => {
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000
+    const size = res.getHeader('content-length')
+    const sizeText = typeof size === 'string' || typeof size === 'number' ? ` ${size}b` : ''
+    console.log(
+      `[${new Date().toISOString()}] <- ${method} ${url} ${res.statusCode} ${elapsedMs.toFixed(1)}ms${sizeText}`,
+    )
+  })
+
+  next()
+})
 const port = Number(process.env.API_PORT || 3001)
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -300,7 +322,8 @@ app.get('/api/render-asset', async (req, res) => {
     const ab = await upstream.arrayBuffer()
     const ct = upstream.headers.get('content-type') || 'application/octet-stream'
     res.setHeader('Content-Type', ct)
-    res.setHeader('Cache-Control', 'public, max-age=600')
+    // Rendering input assets can be overwritten at same URL; disable caching to prevent stale images.
+    res.setHeader('Cache-Control', 'no-store')
     res.setHeader('Access-Control-Allow-Origin', '*')
     return res.status(200).send(Buffer.from(ab))
   } catch (error) {
