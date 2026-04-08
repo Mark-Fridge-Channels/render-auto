@@ -1,7 +1,7 @@
 import cors from 'cors'
 import { config as loadEnv } from 'dotenv'
 import express from 'express'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,6 +13,16 @@ import { renderBatchWithChromium } from './render'
 loadEnv()
 
 const app = express()
+const AUTH_USER = 'admin'
+const AUTH_PASS = 'Render@2026'
+const AUTH_COOKIE = 'render_auto_sid'
+const CHALLENGE_TTL_MS = 2 * 60 * 1000
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000
+
+type LoginChallenge = { username: string; expiresAt: number }
+type LoginSession = { username: string; expiresAt: number }
+const loginChallenges = new Map<string, LoginChallenge>()
+const loginSessions = new Map<string, LoginSession>()
 
 // Request logging middleware — logs every request with status and duration.
 app.use((req, res, next) => {
@@ -45,6 +55,20 @@ fs.mkdirSync(backgroundDir, { recursive: true })
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 app.use('/uploads', express.static(uploadsDir))
+app.use((req, res, next) => {
+  cleanupAuthState()
+  const openApi =
+    req.path === '/api/health' ||
+    req.path === '/api/auth/challenge' ||
+    req.path === '/api/auth/login' ||
+    req.path === '/api/auth/session' ||
+    req.path === '/api/auth/logout' ||
+    req.path === '/api/render-asset'
+  if (!req.path.startsWith('/api') || openApi) return next()
+  const user = getSessionUser(req)
+  if (!user) return res.status(401).json({ error: 'unauthorized' })
+  return next()
+})
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -100,6 +124,56 @@ const singleSchema = z.object({
   productImageUrl: z.string().url(),
   templateId: z.string(),
 })
+
+const challengeSchema = z.object({
+  username: z.string().min(1),
+})
+
+const loginSchema = z.object({
+  username: z.string().min(1),
+  nonce: z.string().min(1),
+  proof: z.string().regex(/^[a-fA-F0-9]{64}$/),
+})
+
+function sha256Hex(input: string): string {
+  return createHash('sha256').update(input, 'utf8').digest('hex')
+}
+
+function parseCookies(req: express.Request): Record<string, string> {
+  const raw = req.headers.cookie
+  if (!raw) return {}
+  const out: Record<string, string> = {}
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=')
+    if (i <= 0) continue
+    const k = part.slice(0, i).trim()
+    const v = decodeURIComponent(part.slice(i + 1).trim())
+    out[k] = v
+  }
+  return out
+}
+
+function getSessionUser(req: express.Request): string | null {
+  const sid = parseCookies(req)[AUTH_COOKIE]
+  if (!sid) return null
+  const session = loginSessions.get(sid)
+  if (!session) return null
+  if (session.expiresAt < Date.now()) {
+    loginSessions.delete(sid)
+    return null
+  }
+  return session.username
+}
+
+function cleanupAuthState() {
+  const now = Date.now()
+  for (const [k, v] of loginChallenges.entries()) {
+    if (v.expiresAt < now) loginChallenges.delete(k)
+  }
+  for (const [k, v] of loginSessions.entries()) {
+    if (v.expiresAt < now) loginSessions.delete(k)
+  }
+}
 
 function toTemplateDto(row: TemplateRow): TemplateDto {
   return {
@@ -289,6 +363,62 @@ app.post('/api/render/single', async (req, res) => {
     const message = error instanceof Error ? error.message : String(error)
     res.status(500).json({ error: message })
   }
+})
+
+app.post('/api/auth/challenge', (req, res) => {
+  const parsed = challengeSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.message })
+  if (parsed.data.username !== AUTH_USER) return res.status(401).json({ error: 'invalid credentials' })
+  const nonce = randomUUID().replaceAll('-', '')
+  loginChallenges.set(nonce, {
+    username: parsed.data.username,
+    expiresAt: Date.now() + CHALLENGE_TTL_MS,
+  })
+  return res.json({ nonce, algorithm: 'sha256(nonce:sha256(password))' as const })
+})
+
+app.post('/api/auth/login', (req, res) => {
+  const parsed = loginSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.message })
+  const challenge = loginChallenges.get(parsed.data.nonce)
+  loginChallenges.delete(parsed.data.nonce)
+  if (!challenge || challenge.expiresAt < Date.now() || challenge.username !== parsed.data.username) {
+    return res.status(401).json({ error: 'challenge expired' })
+  }
+  if (parsed.data.username !== AUTH_USER) return res.status(401).json({ error: 'invalid credentials' })
+  const expected = sha256Hex(`${parsed.data.nonce}:${sha256Hex(AUTH_PASS)}`)
+  const expectedBuf = Buffer.from(expected, 'utf8')
+  const actualBuf = Buffer.from(parsed.data.proof.toLowerCase(), 'utf8')
+  if (expectedBuf.length !== actualBuf.length || !timingSafeEqual(expectedBuf, actualBuf)) {
+    return res.status(401).json({ error: 'invalid credentials' })
+  }
+  const sid = randomUUID()
+  loginSessions.set(sid, { username: parsed.data.username, expiresAt: Date.now() + SESSION_TTL_MS })
+  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https'
+  res.setHeader(
+    'Set-Cookie',
+    `${AUTH_COOKIE}=${encodeURIComponent(sid)}; HttpOnly; Path=/; Max-Age=${Math.floor(
+      SESSION_TTL_MS / 1000,
+    )}; SameSite=Lax${secure ? '; Secure' : ''}`,
+  )
+  return res.json({ ok: true as const })
+})
+
+app.get('/api/auth/session', (req, res) => {
+  const username = getSessionUser(req)
+  if (!username) return res.status(401).json({ authenticated: false })
+  return res.json({ authenticated: true as const, username })
+})
+
+app.post('/api/auth/logout', (req, res) => {
+  const sid = parseCookies(req)[AUTH_COOKIE]
+  if (sid) loginSessions.delete(sid)
+  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https'
+  res.setHeader(
+    'Set-Cookie',
+    `${AUTH_COOKIE}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${secure ? '; Secure' : ''}`,
+  )
+  return res.json({ ok: true as const })
 })
 
 app.get('/api/health', (_req, res) => {

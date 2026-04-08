@@ -4,6 +4,7 @@ const API = '/api'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
@@ -80,6 +81,7 @@ export async function uploadBackgroundAsset(file: File) {
   const form = new FormData()
   form.append('file', file)
   const res = await fetch(`${API}/assets/background`, {
+    credentials: 'include',
     method: 'POST',
     body: form,
   })
