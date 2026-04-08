@@ -1,0 +1,18 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: render-auto-app
+    ports:
+      - "5173:5173"
+      - "3001:3001"
+    environment:
+      API_PORT: "3001"
+      RENDER_APP_URL: "http://localhost:5173"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    restart: unless-stopped
