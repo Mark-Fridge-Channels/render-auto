@@ -41,6 +41,21 @@ export type ProductBrushShadow = {
   color: string
 }
 
+/** Centered rounded-rect border drawn above title/logo; toggle per template via `enabled`. */
+export type DecorFrameConfig = {
+  enabled: boolean
+  /** Outer box width in canvas logical px (clamped to canvas when rendering). */
+  width: number
+  height: number
+  cornerRadius: number
+  borderWidth: number
+  color: string
+  /** Fill inside the rounded rect (e.g. #000000); combined with `fillOpacity` via `color-mix`. */
+  fillColor: string
+  /** 0–1; 0 = no inner fill. */
+  fillOpacity: number
+}
+
 export type ProductStyleConfig = {
   /** Rounded corners on the perspective quad (canvas px), clamped to facet geometry. */
   cornerRadius: number
@@ -76,4 +91,5 @@ export type PosterConfig = {
   product: ProductStyleConfig
   title: TitleConfig
   logo: LogoConfig
+  decorFrame: DecorFrameConfig
 }

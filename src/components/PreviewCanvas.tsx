@@ -8,6 +8,7 @@ import type {
   TitleConfig,
 } from '../types/render'
 import { shouldUseAnonymousCrossOrigin } from '../utils/mediaCrossOrigin'
+import { DecorFrameLayer } from './DecorFrameLayer'
 import { BrushShadowOverlay } from './BrushShadowOverlay'
 import { LogoLayer } from './LogoLayer'
 import { ProductWarpCanvas } from './ProductWarpCanvas'
@@ -131,6 +132,12 @@ export function PreviewCanvas({
         src={logoUrl}
         naturalWidth={logoNaturalWidth}
         naturalHeight={logoNaturalHeight}
+      />
+
+      <DecorFrameLayer
+        canvasWidth={w}
+        canvasHeight={h}
+        frame={config.decorFrame}
       />
 
       {showInteraction ? (

@@ -35,12 +35,14 @@ function Num({
   step = 1,
   min,
   max,
+  disabled,
 }: {
   value: number
   onChange: (v: number) => void
   step?: number
   min?: number
   max?: number
+  disabled?: boolean
 }) {
   return (
     <input
@@ -48,9 +50,10 @@ function Num({
       step={step}
       min={min}
       max={max}
+      disabled={disabled}
       value={Number.isFinite(value) ? value : 0}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:cursor-not-allowed disabled:bg-slate-100"
     />
   )
 }
@@ -592,6 +595,124 @@ export function ControlPanel({
             />
           </Field>
         </div>
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          顶层装饰框
+        </h2>
+        <p className="text-[10px] leading-relaxed text-slate-500">
+          圆角矩形描边，框内可加半透明叠色；相对画布水平垂直居中，叠在标题与
+          Logo 之上；按模板保存，未开启的模板不会显示。
+        </p>
+        <label className="flex items-center gap-2 text-xs text-slate-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+            checked={config.decorFrame.enabled}
+            onChange={(e) =>
+              patchNested('decorFrame', { enabled: e.target.checked })
+            }
+          />
+          显示装饰框
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="框宽（画布 px）">
+            <Num
+              min={1}
+              value={config.decorFrame.width}
+              onChange={(v) =>
+                patchNested('decorFrame', { width: Math.max(1, v) })
+              }
+              disabled={!config.decorFrame.enabled}
+            />
+          </Field>
+          <Field label="框高（画布 px）">
+            <Num
+              min={1}
+              value={config.decorFrame.height}
+              onChange={(v) =>
+                patchNested('decorFrame', { height: Math.max(1, v) })
+              }
+              disabled={!config.decorFrame.enabled}
+            />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="圆角半径（画布 px）">
+            <Num
+              min={0}
+              value={config.decorFrame.cornerRadius}
+              onChange={(v) =>
+                patchNested('decorFrame', { cornerRadius: Math.max(0, v) })
+              }
+              disabled={!config.decorFrame.enabled}
+            />
+          </Field>
+          <Field label="描边宽度（画布 px）">
+            <Num
+              min={0}
+              step={0.5}
+              value={config.decorFrame.borderWidth}
+              onChange={(v) =>
+                patchNested('decorFrame', { borderWidth: Math.max(0, v) })
+              }
+              disabled={!config.decorFrame.enabled}
+            />
+          </Field>
+        </div>
+        <Field label="描边颜色 (#RRGGBB 等)">
+          <input
+            type="text"
+            value={config.decorFrame.color}
+            onChange={(e) =>
+              patchNested('decorFrame', { color: e.target.value })
+            }
+            disabled={!config.decorFrame.enabled}
+            className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100"
+          />
+        </Field>
+        <Field label="框内半透明 · 颜色">
+          <input
+            type="text"
+            value={config.decorFrame.fillColor}
+            onChange={(e) =>
+              patchNested('decorFrame', { fillColor: e.target.value })
+            }
+            disabled={!config.decorFrame.enabled}
+            className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100"
+          />
+        </Field>
+        <Field label="框内半透明 · 不透明度（0–1，0 为无填充）">
+          <div className="flex flex-col gap-2">
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={Math.min(1, Math.max(0, config.decorFrame.fillOpacity))}
+              onChange={(e) =>
+                patchNested('decorFrame', {
+                  fillOpacity: Math.min(1, Math.max(0, Number(e.target.value))),
+                })
+              }
+              disabled={!config.decorFrame.enabled}
+              className="w-full accent-sky-600 disabled:opacity-50"
+            />
+            <Num
+              min={0}
+              max={1}
+              step={0.05}
+              value={Math.min(1, Math.max(0, config.decorFrame.fillOpacity))}
+              onChange={(v) =>
+                patchNested('decorFrame', {
+                  fillOpacity: Math.min(1, Math.max(0, v)),
+                })
+              }
+              disabled={!config.decorFrame.enabled}
+            />
+          </div>
+        </Field>
       </section>
 
       <section className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">

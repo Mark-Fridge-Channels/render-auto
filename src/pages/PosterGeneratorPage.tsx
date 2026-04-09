@@ -6,7 +6,8 @@ import {
 } from '../api/templateApi'
 import { ControlPanel } from '../components/ControlPanel'
 import { PreviewCanvas } from '../components/PreviewCanvas'
-import type { ProductBrushShadow, ProductQuad } from '../types/render'
+import type { PosterConfig, ProductBrushShadow, ProductQuad } from '../types/render'
+import { withDecorFrameDefaults } from '../config/defaultConfig'
 import { usePosterStore } from '../store/posterStore'
 
 /**
@@ -58,7 +59,9 @@ export function PosterGeneratorPage() {
       try {
         const data = await getTemplateById(queryTemplateId)
         setBackgroundLoadFailed(false)
-        setConfig(data.template.payload.config)
+        setConfig(
+          withDecorFrameDefaults(data.template.payload.config as PosterConfig),
+        )
         setProductQuad((data.template.payload.productQuad ?? null) as ProductQuad | null)
         const loadedShadow = (data.template.payload.productBrushShadow ??
           null) as ProductBrushShadow | null

@@ -1,6 +1,8 @@
 import { chromium } from 'playwright'
 import { config as loadEnv } from 'dotenv'
 import { z } from 'zod'
+import { withDecorFrameDefaults } from '../src/config/defaultConfig'
+import type { PosterConfig } from '../src/types/render'
 import { buildObjectKey, uploadPngToS3 } from './s3'
 
 loadEnv()
@@ -62,7 +64,7 @@ function scalePayloadToExport(payload: z.infer<typeof payloadSchema>) {
   const sx = eW / cW
   const sy = eH / cH
 
-  const cfg = structuredClone(payload.config)
+  const cfg = withDecorFrameDefaults(structuredClone(payload.config) as PosterConfig)
   cfg.canvas.width = eW
   cfg.canvas.height = eH
 
@@ -80,6 +82,19 @@ function scalePayloadToExport(payload: z.infer<typeof payloadSchema>) {
     if (typeof prod.quadInnerShadowBlur === 'number') {
       prod.quadInnerShadowBlur *= sAvg
     }
+  }
+
+  if (cfg.decorFrame && typeof cfg.decorFrame === 'object') {
+    const df = cfg.decorFrame as {
+      width?: number
+      height?: number
+      cornerRadius?: number
+      borderWidth?: number
+    }
+    if (typeof df.width === 'number') df.width *= sx
+    if (typeof df.height === 'number') df.height *= sy
+    if (typeof df.cornerRadius === 'number') df.cornerRadius *= sAvg
+    if (typeof df.borderWidth === 'number') df.borderWidth *= sAvg
   }
 
   const scaledQuad = Array.isArray(payload.productQuad)

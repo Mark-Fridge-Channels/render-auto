@@ -1,4 +1,16 @@
-import type { PosterConfig } from '../types/render'
+import type { DecorFrameConfig, PosterConfig } from '../types/render'
+
+/** Defaults for `decorFrame` and for merging older saved templates that omit it. */
+export const defaultDecorFrame: DecorFrameConfig = {
+  enabled: false,
+  width: 2800,
+  height: 2800,
+  cornerRadius: 40,
+  borderWidth: 6,
+  color: '#ffffff',
+  fillColor: '#000000',
+  fillOpacity: 0.35,
+}
 
 /**
  * Sensible starter values — replace `backgroundImageUrl` with your own asset as needed.
@@ -36,4 +48,13 @@ export const defaultPosterConfig: PosterConfig = {
     y: 60,
     width: 180,
   },
+  decorFrame: { ...defaultDecorFrame },
+}
+
+/** Fill `decorFrame` when loading legacy templates that predate this field. */
+export function withDecorFrameDefaults(cfg: PosterConfig): PosterConfig {
+  return {
+    ...cfg,
+    decorFrame: { ...defaultDecorFrame, ...cfg.decorFrame },
+  }
 }

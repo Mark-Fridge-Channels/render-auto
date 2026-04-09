@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toPng } from 'html-to-image'
+import { withDecorFrameDefaults } from '../config/defaultConfig'
 import { PreviewCanvas } from '../components/PreviewCanvas'
 import type { PosterConfig, ProductBrushShadow, ProductQuad } from '../types/render'
 
@@ -20,7 +21,11 @@ type RuntimeWindow = Window & {
 function readRuntimePayload(): RuntimePayload | null {
   const raw = (window as RuntimeWindow).__RENDER_PAYLOAD__
   if (!raw || typeof raw !== 'object') return null
-  return raw as RuntimePayload
+  const r = raw as RuntimePayload
+  return {
+    ...r,
+    config: withDecorFrameDefaults(r.config as PosterConfig),
+  }
 }
 
 /**
