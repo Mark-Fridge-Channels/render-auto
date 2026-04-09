@@ -24,4 +24,6 @@ dist-ssr
 *.sw?
 
 .env
-data/
+
+# SQLite / local runtime data (never commit)
+/data/
