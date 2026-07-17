@@ -1,4 +1,9 @@
-import type { PosterConfig, ProductBrushShadow, ProductQuad } from './render'
+import type {
+  PosterConfig,
+  ProductBrushShadow,
+  ProductOcclusionMask,
+  ProductQuad,
+} from './render'
 
 /**
  * Persisted template payload: all poster params + committed four-point geometry.
@@ -8,6 +13,8 @@ export type TemplatePayload = {
   productQuad: ProductQuad | null
   /** Optional closed brush region + shadow params; same coordinate space as `productQuad`. */
   productBrushShadow?: ProductBrushShadow | null
+  /** Optional hand-drawn regions to restore foreground (e.g. fingers) above the product. */
+  productOcclusionMask?: ProductOcclusionMask | null
 }
 
 export type TemplateItem = {

@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { toPng } from 'html-to-image'
 import { withDecorFrameDefaults } from '../config/defaultConfig'
 import { PreviewCanvas } from '../components/PreviewCanvas'
-import type { PosterConfig, ProductBrushShadow, ProductQuad } from '../types/render'
+import type { PosterConfig, ProductBrushShadow, ProductOcclusionMask, ProductQuad } from '../types/render'
 
 type RuntimePayload = {
   config: PosterConfig
   productQuad: ProductQuad | null
   productBrushShadow?: ProductBrushShadow | null
+  productOcclusionMask?: ProductOcclusionMask | null
   productImageUrl: string
 }
 
@@ -36,6 +37,8 @@ export function RenderRuntimePage() {
   const [sourceReady, setSourceReady] = useState(false)
   const [bakedPngUrl, setBakedPngUrl] = useState<string | null>(null)
   const [bakeFailed, setBakeFailed] = useState(false)
+  const [bgNaturalW, setBgNaturalW] = useState(0)
+  const [bgNaturalH, setBgNaturalH] = useState(0)
 
   useEffect(() => {
     ;(window as RuntimeWindow).__RENDER_RUNTIME_STATE__ = 'boot'
@@ -55,7 +58,9 @@ export function RenderRuntimePage() {
       // not block readiness polling indefinitely.
       const imgsReady = imgs.every((img) => img.complete)
       const productReady = root.querySelector('canvas[data-product-ready="true"]') !== null
-      if (imgsReady && productReady) {
+      const occlusionReady =
+        root.querySelector('canvas[data-occlusion-ready="true"]') !== null
+      if (imgsReady && productReady && occlusionReady) {
         ;(window as RuntimeWindow).__RENDER_RUNTIME_STATE__ = 'source-ready'
         setSourceReady(true)
         return
@@ -111,9 +116,10 @@ export function RenderRuntimePage() {
       const root = document.querySelector('[data-render-root="true"]') as HTMLElement | null
       const imgCount = root ? root.querySelectorAll('img').length : 0
       const productReady = root ? root.querySelector('canvas[data-product-ready="true"]') !== null : false
+      const occlusionReady = root ? root.querySelector('canvas[data-occlusion-ready="true"]') !== null : false
       const state = w.__RENDER_RUNTIME_STATE__ || 'unknown'
       w.__RENDER_EXPORT_ERROR__ =
-        `runtime ready timeout ${timeoutMs}ms (state=${state}, imgCount=${imgCount}, productReady=${productReady})`
+        `runtime ready timeout ${timeoutMs}ms (state=${state}, imgCount=${imgCount}, productReady=${productReady}, occlusionReady=${occlusionReady})`
       w.__RENDER_RUNTIME_STATE__ = 'failed-timeout'
       setBakeFailed(true)
     }, timeoutMs)
@@ -158,7 +164,12 @@ export function RenderRuntimePage() {
             quadDrawing={false}
             backgroundFailed={false}
             onBackgroundError={() => {}}
-            onBackgroundLoad={() => {}}
+            onBackgroundLoad={(w, h) => {
+              setBgNaturalW(w)
+              setBgNaturalH(h)
+            }}
+            backgroundNaturalWidth={bgNaturalW}
+            backgroundNaturalHeight={bgNaturalH}
             onAddQuadPoint={() => {}}
             onMoveQuadCorner={() => {}}
             productBrushShadow={payload.productBrushShadow ?? null}
@@ -167,6 +178,12 @@ export function RenderRuntimePage() {
             onAppendBrushPoint={() => {}}
             onFinishBrushStroke={() => {}}
             onCancelBrushStroke={() => {}}
+            productOcclusionMask={payload.productOcclusionMask ?? null}
+            occlusionDraftPoints={[]}
+            occlusionDrawing={false}
+            onAppendOcclusionPoint={() => {}}
+            onFinishOcclusionStroke={() => {}}
+            onCancelOcclusionStroke={() => {}}
             showInteraction={false}
             decorated={false}
           />

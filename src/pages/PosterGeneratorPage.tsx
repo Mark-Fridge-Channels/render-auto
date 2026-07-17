@@ -6,8 +6,8 @@ import {
 } from '../api/templateApi'
 import { ControlPanel } from '../components/ControlPanel'
 import { PreviewCanvas } from '../components/PreviewCanvas'
-import type { PosterConfig, ProductBrushShadow, ProductQuad } from '../types/render'
-import { withDecorFrameDefaults } from '../config/defaultConfig'
+import type { PosterConfig, ProductBrushShadow, ProductOcclusionMask, ProductQuad } from '../types/render'
+import { defaultPosterConfig, withDecorFrameDefaults } from '../config/defaultConfig'
 import { usePosterStore } from '../store/posterStore'
 
 /**
@@ -33,6 +33,12 @@ export function PosterGeneratorPage() {
   const moveQuadCorner = usePosterStore((s) => s.moveQuadCorner)
   const setConfig = usePosterStore((s) => s.setConfig)
   const setBackgroundLoadFailed = usePosterStore((s) => s.setBackgroundLoadFailed)
+  const setBackgroundNaturalSize = usePosterStore((s) => s.setBackgroundNaturalSize)
+  const syncPosterDimensionsToBackground = usePosterStore(
+    (s) => s.syncPosterDimensionsToBackground,
+  )
+  const backgroundNaturalWidth = usePosterStore((s) => s.backgroundNaturalWidth)
+  const backgroundNaturalHeight = usePosterStore((s) => s.backgroundNaturalHeight)
   const setProductQuad = usePosterStore((s) => s.setProductQuad)
   const productBrushShadow = usePosterStore((s) => s.productBrushShadow)
   const brushDraftPoints = usePosterStore((s) => s.brushDraftPoints)
@@ -43,6 +49,15 @@ export function PosterGeneratorPage() {
   const setProductBrushShadow = usePosterStore((s) => s.setProductBrushShadow)
   const patchBrushTool = usePosterStore((s) => s.patchBrushTool)
   const patchNested = usePosterStore((s) => s.patchNested)
+  const productOcclusionMask = usePosterStore((s) => s.productOcclusionMask)
+  const occlusionDraftPoints = usePosterStore((s) => s.occlusionDraftPoints)
+  const occlusionDrawing = usePosterStore((s) => s.occlusionDrawing)
+  const appendOcclusionDraftPoint = usePosterStore(
+    (s) => s.appendOcclusionDraftPoint,
+  )
+  const finishOcclusionStroke = usePosterStore((s) => s.finishOcclusionStroke)
+  const cancelOcclusionDrawing = usePosterStore((s) => s.cancelOcclusionDrawing)
+  const setProductOcclusionMask = usePosterStore((s) => s.setProductOcclusionMask)
 
   const [templateName, setTemplateName] = useState('未命名模板')
   const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(null)
@@ -76,6 +91,19 @@ export function PosterGeneratorPage() {
             color: loadedShadow.color,
           })
         }
+        const loadedOcclusion = (data.template.payload.productOcclusionMask ??
+          null) as ProductOcclusionMask | null
+        setProductOcclusionMask(
+          loadedOcclusion
+            ? {
+                regions: loadedOcclusion.regions ?? [],
+                feather: loadedOcclusion.feather ?? 2,
+                edgeInset: loadedOcclusion.edgeInset ?? 1.5,
+                contactShadowSpread: loadedOcclusion.contactShadowSpread ?? 5,
+                contactShadowOpacity: loadedOcclusion.contactShadowOpacity ?? 0.22,
+              }
+            : null,
+        )
         setTemplateName(data.template.name)
         setCurrentTemplateId(data.template.id)
       } catch (err) {
@@ -90,6 +118,7 @@ export function PosterGeneratorPage() {
     setProductQuad,
     setProductBrushShadow,
     patchBrushTool,
+    setProductOcclusionMask,
   ])
 
   useLayoutEffect(() => {
@@ -121,6 +150,20 @@ export function PosterGeneratorPage() {
     backgroundFetchedUrl ??
     config.backgroundImageUrl
 
+  const handleBackgroundLoad = (naturalWidth: number, naturalHeight: number) => {
+    setBackgroundLoadFailed(false)
+    const prev = usePosterStore.getState()
+    const isDefaultCanvas =
+      prev.config.canvas.width === defaultPosterConfig.canvas.width &&
+      prev.config.canvas.height === defaultPosterConfig.canvas.height &&
+      prev.config.export.width === defaultPosterConfig.export.width &&
+      prev.config.export.height === defaultPosterConfig.export.height
+    setBackgroundNaturalSize(naturalWidth, naturalHeight)
+    if (!currentTemplateId && (isDefaultCanvas || prev.backgroundNaturalWidth === 0)) {
+      syncPosterDimensionsToBackground(naturalWidth, naturalHeight)
+    }
+  }
+
   const onSaveTemplate = async () => {
     if (!productQuad) {
       window.alert('保存模板前请先完成四点标记')
@@ -131,12 +174,12 @@ export function PosterGeneratorPage() {
       if (currentTemplateId) {
         await updateTemplate(currentTemplateId, {
           name: templateName.trim() || '未命名模板',
-          payload: { config, productQuad, productBrushShadow },
+          payload: { config, productQuad, productBrushShadow, productOcclusionMask },
         })
       } else {
         const created = await createTemplate({
           name: templateName.trim() || `模板-${Date.now()}`,
-          payload: { config, productQuad, productBrushShadow },
+          payload: { config, productQuad, productBrushShadow, productOcclusionMask },
           enabled: true,
         })
         setCurrentTemplateId(created.template.id)
@@ -191,7 +234,9 @@ export function PosterGeneratorPage() {
               quadDrawing={quadDrawing}
               backgroundFailed={backgroundFailed}
               onBackgroundError={() => setBackgroundLoadFailed(true)}
-              onBackgroundLoad={() => setBackgroundLoadFailed(false)}
+              onBackgroundLoad={handleBackgroundLoad}
+              backgroundNaturalWidth={backgroundNaturalWidth}
+              backgroundNaturalHeight={backgroundNaturalHeight}
               onAddQuadPoint={addDraftQuadPoint}
               onMoveQuadCorner={moveQuadCorner}
               productBrushShadow={productBrushShadow}
@@ -200,6 +245,12 @@ export function PosterGeneratorPage() {
               onAppendBrushPoint={appendBrushDraftPoint}
               onFinishBrushStroke={finishBrushDrawing}
               onCancelBrushStroke={cancelBrushDrawing}
+              productOcclusionMask={productOcclusionMask}
+              occlusionDraftPoints={occlusionDraftPoints}
+              occlusionDrawing={occlusionDrawing}
+              onAppendOcclusionPoint={appendOcclusionDraftPoint}
+              onFinishOcclusionStroke={finishOcclusionStroke}
+              onCancelOcclusionStroke={cancelOcclusionDrawing}
               onPatchTitle={(p) => patchNested('title', p)}
               onPatchLogo={(p) => patchNested('logo', p)}
             />

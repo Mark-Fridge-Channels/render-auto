@@ -1,3 +1,4 @@
+import type { RefObject } from 'react'
 import { useEffect, useRef } from 'react'
 import type { ProductBrushShadow, ProductQuad } from '../types/render'
 import { drawBrushShadowInClip } from '../utils/brushShadowCanvas'
@@ -8,6 +9,7 @@ import {
   traceRoundedQuadPath,
 } from '../utils/roundedQuadClip'
 import { renderWarpedImageInQuadCpu } from '../utils/cpuQuadWarp'
+import { capProductWarpSourceSize } from '../utils/capProductResolution'
 import { drawQuadInnerShadowRim } from '../utils/quadInnerShadow'
 import { drawWarpedImageInQuad } from '../utils/quadWarp'
 
@@ -27,6 +29,10 @@ type Props = {
   quadInnerShadowEnabled: boolean
   quadInnerShadowOpacity: number
   quadInnerShadowBlur: number
+  /** Optional ref to the rendered product canvas (for occlusion defringe). */
+  canvasRef?: RefObject<HTMLCanvasElement | null>
+  backgroundNaturalWidth?: number
+  backgroundNaturalHeight?: number
 }
 
 let noiseTexture: HTMLCanvasElement | null = null
@@ -68,11 +74,19 @@ export function ProductWarpCanvas({
   quadInnerShadowEnabled,
   quadInnerShadowOpacity,
   quadInnerShadowBlur,
+  canvasRef,
+  backgroundNaturalWidth = 0,
+  backgroundNaturalHeight = 0,
 }: Props) {
-  const ref = useRef<HTMLCanvasElement>(null)
+  const localRef = useRef<HTMLCanvasElement>(null)
+
+  const assignCanvasRef = (el: HTMLCanvasElement | null) => {
+    localRef.current = el
+    if (canvasRef) canvasRef.current = el
+  }
 
   useEffect(() => {
-    const canvas = ref.current
+    const canvas = localRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
@@ -101,11 +115,24 @@ export function ProductWarpCanvas({
       octx.clearRect(0, 0, width, height)
       octx.imageSmoothingEnabled = true
       octx.imageSmoothingQuality = 'high'
+
+      const capped = quad
+        ? capProductWarpSourceSize(
+            img.naturalWidth,
+            img.naturalHeight,
+            quad,
+            width,
+            height,
+            backgroundNaturalWidth,
+            backgroundNaturalHeight,
+          )
+        : { width: img.naturalWidth, height: img.naturalHeight }
+
       const warpedNoMesh =
         renderWarpedImageInQuadCpu(
           img,
-          img.naturalWidth,
-          img.naturalHeight,
+          capped.width,
+          capped.height,
           width,
           height,
           quad,
@@ -117,8 +144,8 @@ export function ProductWarpCanvas({
         drawWarpedImageInQuad(
           octx,
           img,
-          img.naturalWidth,
-          img.naturalHeight,
+          capped.width,
+          capped.height,
           quad,
         )
       }
@@ -252,11 +279,13 @@ export function ProductWarpCanvas({
     quadInnerShadowEnabled,
     quadInnerShadowOpacity,
     quadInnerShadowBlur,
+    backgroundNaturalWidth,
+    backgroundNaturalHeight,
   ])
 
   return (
     <canvas
-      ref={ref}
+      ref={assignCanvasRef}
       width={width}
       height={height}
       className="pointer-events-none absolute inset-0 z-20"

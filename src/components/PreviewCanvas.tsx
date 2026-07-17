@@ -1,9 +1,11 @@
 import type { RefObject } from 'react'
+import { useRef } from 'react'
 import type {
   LogoConfig,
   Point,
   PosterConfig,
   ProductBrushShadow,
+  ProductOcclusionMask,
   ProductQuad,
   TitleConfig,
 } from '../types/render'
@@ -11,6 +13,8 @@ import { shouldUseAnonymousCrossOrigin } from '../utils/mediaCrossOrigin'
 import { DecorFrameLayer } from './DecorFrameLayer'
 import { BrushShadowOverlay } from './BrushShadowOverlay'
 import { LogoLayer } from './LogoLayer'
+import { OcclusionMaskOverlay } from './OcclusionMaskOverlay'
+import { OcclusionRestoreCanvas } from './OcclusionRestoreCanvas'
 import { ProductWarpCanvas } from './ProductWarpCanvas'
 import { QuadInteractionOverlay } from './QuadInteractionOverlay'
 import { TitleLayer } from './TitleLayer'
@@ -30,7 +34,9 @@ type Props = {
   quadDrawing: boolean
   backgroundFailed: boolean
   onBackgroundError: () => void
-  onBackgroundLoad: () => void
+  onBackgroundLoad: (naturalWidth: number, naturalHeight: number) => void
+  backgroundNaturalWidth: number
+  backgroundNaturalHeight: number
   onAddQuadPoint: (p: Point) => void
   onMoveQuadCorner: (index: number, p: Point) => void
   productBrushShadow: ProductBrushShadow | null
@@ -39,6 +45,12 @@ type Props = {
   onAppendBrushPoint: (p: Point) => void
   onFinishBrushStroke: () => void
   onCancelBrushStroke: () => void
+  productOcclusionMask: ProductOcclusionMask | null
+  occlusionDraftPoints: Point[]
+  occlusionDrawing: boolean
+  onAppendOcclusionPoint: (p: Point) => void
+  onFinishOcclusionStroke: () => void
+  onCancelOcclusionStroke: () => void
   /** When set with `showInteraction`, title/logo can be dragged and resized on canvas. */
   onPatchTitle?: (partial: Partial<TitleConfig>) => void
   onPatchLogo?: (partial: Partial<LogoConfig>) => void
@@ -65,6 +77,8 @@ export function PreviewCanvas({
   backgroundFailed,
   onBackgroundError,
   onBackgroundLoad,
+  backgroundNaturalWidth,
+  backgroundNaturalHeight,
   onAddQuadPoint,
   onMoveQuadCorner,
   productBrushShadow,
@@ -73,6 +87,12 @@ export function PreviewCanvas({
   onAppendBrushPoint,
   onFinishBrushStroke,
   onCancelBrushStroke,
+  productOcclusionMask,
+  occlusionDraftPoints,
+  occlusionDrawing,
+  onAppendOcclusionPoint,
+  onFinishOcclusionStroke,
+  onCancelOcclusionStroke,
   onPatchTitle,
   onPatchLogo,
   showInteraction = true,
@@ -82,6 +102,7 @@ export function PreviewCanvas({
   const w = config.canvas.width
   const h = config.canvas.height
   const useCors = shouldUseAnonymousCrossOrigin(backgroundSrc)
+  const productCanvasRef = useRef<HTMLCanvasElement>(null)
 
   return (
     <div
@@ -103,7 +124,10 @@ export function PreviewCanvas({
           crossOrigin={useCors ? 'anonymous' : undefined}
           className="pointer-events-none absolute inset-0 z-10 h-full w-full object-cover"
           onError={onBackgroundError}
-          onLoad={onBackgroundLoad}
+          onLoad={(e) => {
+            const img = e.currentTarget
+            onBackgroundLoad(img.naturalWidth, img.naturalHeight)
+          }}
         />
       )}
 
@@ -123,6 +147,17 @@ export function PreviewCanvas({
           config.product.quadInnerShadowOpacity ?? 0.35
         }
         quadInnerShadowBlur={config.product.quadInnerShadowBlur ?? 14}
+        canvasRef={productCanvasRef}
+        backgroundNaturalWidth={backgroundNaturalWidth}
+        backgroundNaturalHeight={backgroundNaturalHeight}
+      />
+
+      <OcclusionRestoreCanvas
+        width={w}
+        height={h}
+        backgroundSrc={backgroundSrc}
+        mask={productOcclusionMask}
+        productCanvasRef={productCanvasRef}
       />
 
       <TitleLayer title={config.title} />
@@ -150,7 +185,7 @@ export function PreviewCanvas({
             quad={productQuad}
             onAddCorner={onAddQuadPoint}
             onMoveCorner={onMoveQuadCorner}
-            passive={brushDrawing}
+            passive={brushDrawing || occlusionDrawing}
           />
           {onPatchTitle && onPatchLogo ? (
             <TitleLogoDragOverlay
@@ -162,7 +197,7 @@ export function PreviewCanvas({
               hasLogo={Boolean(logoUrl)}
               logoNaturalWidth={logoNaturalWidth}
               logoNaturalHeight={logoNaturalHeight}
-              passive={quadDrawing || brushDrawing}
+              passive={quadDrawing || brushDrawing || occlusionDrawing}
               onPatchTitle={onPatchTitle}
               onPatchLogo={onPatchLogo}
             />
@@ -176,6 +211,18 @@ export function PreviewCanvas({
               onAppendPoint={onAppendBrushPoint}
               onFinishStroke={onFinishBrushStroke}
               onCancelStroke={onCancelBrushStroke}
+            />
+          ) : null}
+          {productQuad ? (
+            <OcclusionMaskOverlay
+              width={w}
+              height={h}
+              active={occlusionDrawing}
+              draftPoints={occlusionDraftPoints}
+              committedRegions={productOcclusionMask?.regions ?? []}
+              onAppendPoint={onAppendOcclusionPoint}
+              onFinishStroke={onFinishOcclusionStroke}
+              onCancelStroke={onCancelOcclusionStroke}
             />
           ) : null}
         </>

@@ -18,14 +18,14 @@ export const defaultDecorFrame: DecorFrameConfig = {
  */
 export const defaultPosterConfig: PosterConfig = {
   canvas: {
-    width: 3000,
-    height: 3000,
+    width: 1920,
+    height: 1920,
   },
   backgroundImageUrl:
     'https://images.unsplash.com/photo-1550684848-facff4328478?auto=format&fit=crop&w=1600&q=80',
   export: {
-    width: 3000,
-    height: 3000,
+    width: 1920,
+    height: 1920,
   },
   product: {
     cornerRadius: 0,

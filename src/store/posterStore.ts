@@ -3,6 +3,7 @@ import type {
   Point,
   PosterConfig,
   ProductBrushShadow,
+  ProductOcclusionMask,
   ProductQuad,
 } from '../types/render'
 import {
@@ -10,6 +11,8 @@ import {
   polygonArea,
   simplifyPolyline,
 } from '../utils/polylineSimplify'
+import { finalizeOcclusionPolygon } from '../utils/occlusionStroke'
+import { scalePosterGeometry } from '../utils/posterDimensionSync'
 import { defaultPosterConfig } from '../config/defaultConfig'
 import { fetchImageBlob } from '../utils/fetchImageBlob'
 
@@ -45,6 +48,13 @@ type PosterStore = {
   /** Defaults / live params merged on commit; also edited when no committed shadow yet. */
   brushTool: Omit<ProductBrushShadow, 'points'>
 
+  /**
+   * Hand-drawn regions to restore foreground pixels (e.g. fingers) above the warped product.
+   */
+  productOcclusionMask: ProductOcclusionMask | null
+  occlusionDraftPoints: Point[]
+  occlusionDrawing: boolean
+
   /** Background image failed to load — preview falls back to white (spec). */
   backgroundLoadFailed: boolean
 
@@ -55,6 +65,9 @@ type PosterStore = {
   backgroundFileUrl: string | null
   /** Populated after a successful `fetchImageBlob` + `URL.createObjectURL`. */
   backgroundFetchedUrl: string | null
+  /** Natural pixel size of the active background image; 0 until first load. */
+  backgroundNaturalWidth: number
+  backgroundNaturalHeight: number
 
   /** Revoke old blob URLs when replacing files. */
   setProductFile: (file: File | null) => void
@@ -76,6 +89,9 @@ type PosterStore = {
   ) => void
 
   setBackgroundLoadFailed: (failed: boolean) => void
+  setBackgroundNaturalSize: (width: number, height: number) => void
+  /** Resize canvas + export to background pixels; scales existing geometry. */
+  syncPosterDimensionsToBackground: (width: number, height: number) => void
 
   /**
    * Starts / restarts quad capture — clears any committed quad and draft per MVP UX.
@@ -97,6 +113,17 @@ type PosterStore = {
   appendBrushDraftPoint: (point: Point) => void
   finishBrushDrawing: () => void
   clearProductBrushShadow: () => void
+
+  setProductOcclusionMask: (mask: ProductOcclusionMask | null) => void
+  patchProductOcclusionMask: (
+    partial: Partial<Omit<ProductOcclusionMask, 'regions'>>,
+  ) => void
+  beginOcclusionDrawingSession: () => void
+  cancelOcclusionDrawing: () => void
+  appendOcclusionDraftPoint: (point: Point) => void
+  finishOcclusionStroke: () => void
+  clearProductOcclusionMask: () => void
+  removeLastOcclusionRegion: () => void
 }
 
 export const usePosterStore = create<PosterStore>((set, get) => ({
@@ -123,10 +150,16 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
     color: '#000000',
   },
 
+  productOcclusionMask: null,
+  occlusionDraftPoints: [],
+  occlusionDrawing: false,
+
   backgroundLoadFailed: false,
 
   backgroundFileUrl: null,
   backgroundFetchedUrl: null,
+  backgroundNaturalWidth: 0,
+  backgroundNaturalHeight: 0,
 
   setProductFile: (file) =>
     set((s) => {
@@ -197,6 +230,34 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
 
   setBackgroundLoadFailed: (failed) => set({ backgroundLoadFailed: failed }),
 
+  setBackgroundNaturalSize: (width, height) =>
+    set({
+      backgroundNaturalWidth: Math.max(0, Math.floor(width)),
+      backgroundNaturalHeight: Math.max(0, Math.floor(height)),
+    }),
+
+  syncPosterDimensionsToBackground: (width, height) => {
+    const w = Math.max(64, Math.floor(width))
+    const h = Math.max(64, Math.floor(height))
+    const s = get()
+    const scaled = scalePosterGeometry(
+      s.config,
+      s.productQuad,
+      s.productBrushShadow,
+      s.productOcclusionMask,
+      w,
+      h,
+    )
+    set({
+      config: scaled.config,
+      productQuad: scaled.productQuad,
+      productBrushShadow: scaled.productBrushShadow,
+      productOcclusionMask: scaled.productOcclusionMask,
+      backgroundNaturalWidth: w,
+      backgroundNaturalHeight: h,
+    })
+  },
+
   beginQuadDrawingSession: () =>
     set({
       productQuad: null,
@@ -205,6 +266,8 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
       productBrushShadow: null,
       brushDraftPoints: [],
       brushDrawing: false,
+      occlusionDraftPoints: [],
+      occlusionDrawing: false,
     }),
 
   addDraftQuadPoint: (raw) => {
@@ -258,6 +321,10 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
     set({
       brushDrawing: true,
       brushDraftPoints: [],
+      occlusionDrawing: false,
+      occlusionDraftPoints: [],
+      quadDrawing: false,
+      quadDraft: [],
     }),
 
   cancelBrushDrawing: () =>
@@ -318,4 +385,90 @@ export const usePosterStore = create<PosterStore>((set, get) => ({
   },
 
   clearProductBrushShadow: () => set({ productBrushShadow: null }),
+
+  setProductOcclusionMask: (mask) => set({ productOcclusionMask: mask }),
+
+  patchProductOcclusionMask: (partial) =>
+    set((s) => {
+      if (!s.productOcclusionMask) return s
+      return {
+        productOcclusionMask: { ...s.productOcclusionMask, ...partial },
+      }
+    }),
+
+  beginOcclusionDrawingSession: () =>
+    set({
+      occlusionDrawing: true,
+      occlusionDraftPoints: [],
+      brushDrawing: false,
+      brushDraftPoints: [],
+      quadDrawing: false,
+      quadDraft: [],
+    }),
+
+  cancelOcclusionDrawing: () =>
+    set({
+      occlusionDrawing: false,
+      occlusionDraftPoints: [],
+    }),
+
+  appendOcclusionDraftPoint: (raw) => {
+    const { config, occlusionDraftPoints, occlusionDrawing } = get()
+    if (!occlusionDrawing) return
+    const p = clampToCanvas(raw, config.canvas.width, config.canvas.height)
+    if (occlusionDraftPoints.length === 0) {
+      set({ occlusionDraftPoints: [p] })
+      return
+    }
+    const last = occlusionDraftPoints[occlusionDraftPoints.length - 1]!
+    if (Math.hypot(p.x - last.x, p.y - last.y) < 2) return
+    set({ occlusionDraftPoints: [...occlusionDraftPoints, p] })
+  },
+
+  finishOcclusionStroke: () => {
+    const { occlusionDraftPoints, occlusionDrawing, productOcclusionMask, config } =
+      get()
+    if (!occlusionDrawing) return
+
+    const simplified = finalizeOcclusionPolygon(
+      occlusionDraftPoints,
+      config.canvas.width,
+      config.canvas.height,
+    )
+
+    if (!simplified) {
+      set({ occlusionDrawing: false, occlusionDraftPoints: [] })
+      return
+    }
+
+    const prev = productOcclusionMask
+    const nextMask: ProductOcclusionMask = {
+      regions: [...(prev?.regions ?? []), { points: simplified }],
+      feather: prev?.feather ?? 2,
+      edgeInset: prev?.edgeInset ?? 1.5,
+      contactShadowSpread: prev?.contactShadowSpread ?? 5,
+      contactShadowOpacity: prev?.contactShadowOpacity ?? 0.22,
+    }
+
+    set({
+      productOcclusionMask: nextMask,
+      occlusionDrawing: false,
+      occlusionDraftPoints: [],
+    })
+  },
+
+  clearProductOcclusionMask: () => set({ productOcclusionMask: null }),
+
+  removeLastOcclusionRegion: () =>
+    set((s) => {
+      const mask = s.productOcclusionMask
+      if (!mask || mask.regions.length === 0) return s
+      const regions = mask.regions.slice(0, -1)
+      if (regions.length === 0) {
+        return { productOcclusionMask: null }
+      }
+      return {
+        productOcclusionMask: { ...mask, regions },
+      }
+    }),
 }))

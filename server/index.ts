@@ -75,6 +75,7 @@ type TemplatePayload = {
   config: unknown
   productQuad: unknown
   productBrushShadow?: unknown
+  productOcclusionMask?: unknown
 }
 
 type TemplateDto = {
@@ -91,6 +92,7 @@ const payloadSchema = z.object({
   config: z.unknown(),
   productQuad: z.unknown(),
   productBrushShadow: z.unknown().optional(),
+  productOcclusionMask: z.unknown().optional(),
 })
 
 const createTemplateSchema = z.object({

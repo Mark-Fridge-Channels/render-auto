@@ -31,6 +31,7 @@ const payloadSchema = z.object({
   }).passthrough(),
   productQuad: z.unknown(),
   productBrushShadow: z.unknown().optional(),
+  productOcclusionMask: z.unknown().optional(),
 })
 
 type RenderTemplate = {
@@ -135,10 +136,53 @@ function scalePayloadToExport(payload: z.infer<typeof payloadSchema>) {
     }
   }
 
+  type OcclusionRegion = { points: Point[] }
+  type OcclusionMask = {
+    regions: OcclusionRegion[]
+    feather?: number
+    edgeInset?: number
+    contactShadowSpread?: number
+    contactShadowOpacity?: number
+  }
+
+  let productOcclusionMask: unknown = payload.productOcclusionMask
+  const occRaw = payload.productOcclusionMask
+  if (
+    occRaw &&
+    typeof occRaw === 'object' &&
+    Array.isArray((occRaw as OcclusionMask).regions)
+  ) {
+    const o = occRaw as OcclusionMask
+    productOcclusionMask = {
+      feather: (o.feather ?? 2) * sAvg,
+      edgeInset: (o.edgeInset ?? 1.5) * sAvg,
+      contactShadowSpread: (o.contactShadowSpread ?? 5) * sAvg,
+      contactShadowOpacity: o.contactShadowOpacity ?? 0.22,
+      regions: o.regions
+        .filter(
+          (r) =>
+            r &&
+            typeof r === 'object' &&
+            Array.isArray(r.points) &&
+            r.points.every(
+              (p) =>
+                p &&
+                typeof p === 'object' &&
+                typeof (p as Point).x === 'number' &&
+                typeof (p as Point).y === 'number',
+            ),
+        )
+        .map((r) => ({
+          points: r.points.map((p) => ({ x: p.x * sx, y: p.y * sy })),
+        })),
+    }
+  }
+
   return {
     config: cfg,
     productQuad: scaledQuad,
     productBrushShadow,
+    productOcclusionMask,
   }
 }
 

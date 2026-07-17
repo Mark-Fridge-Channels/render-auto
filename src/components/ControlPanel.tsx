@@ -93,6 +93,22 @@ export function ControlPanel({
   const patchProductBrushShadow = usePosterStore((s) => s.patchProductBrushShadow)
   const patchBrushTool = usePosterStore((s) => s.patchBrushTool)
 
+  const productOcclusionMask = usePosterStore((s) => s.productOcclusionMask)
+  const occlusionDrawing = usePosterStore((s) => s.occlusionDrawing)
+  const beginOcclusionDrawingSession = usePosterStore(
+    (s) => s.beginOcclusionDrawingSession,
+  )
+  const cancelOcclusionDrawing = usePosterStore((s) => s.cancelOcclusionDrawing)
+  const clearProductOcclusionMask = usePosterStore(
+    (s) => s.clearProductOcclusionMask,
+  )
+  const removeLastOcclusionRegion = usePosterStore(
+    (s) => s.removeLastOcclusionRegion,
+  )
+  const patchProductOcclusionMask = usePosterStore(
+    (s) => s.patchProductOcclusionMask,
+  )
+
   const setBackgroundLoadFailed = usePosterStore((s) => s.setBackgroundLoadFailed)
   const setBackgroundFile = usePosterStore((s) => s.setBackgroundFile)
   const revokeBackgroundFetched = usePosterStore((s) => s.revokeBackgroundFetched)
@@ -102,6 +118,11 @@ export function ControlPanel({
   )
   const backgroundFileUrl = usePosterStore((s) => s.backgroundFileUrl)
   const backgroundFetchedUrl = usePosterStore((s) => s.backgroundFetchedUrl)
+  const backgroundNaturalWidth = usePosterStore((s) => s.backgroundNaturalWidth)
+  const backgroundNaturalHeight = usePosterStore((s) => s.backgroundNaturalHeight)
+  const syncPosterDimensionsToBackground = usePosterStore(
+    (s) => s.syncPosterDimensionsToBackground,
+  )
   const exportDisabled = !productQuad || productQuad.length !== 4
 
   const onExport = async () => {
@@ -243,6 +264,31 @@ export function ControlPanel({
             />
           </Field>
         </div>
+        {backgroundNaturalWidth > 0 && backgroundNaturalHeight > 0 ? (
+          <p className="text-[10px] leading-relaxed text-slate-500">
+            背景原图 {backgroundNaturalWidth}×{backgroundNaturalHeight}px
+            {config.export.width > backgroundNaturalWidth ||
+            config.export.height > backgroundNaturalHeight
+              ? ' — 当前导出大于背景，背景会被放大变糊'
+              : ''}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          disabled={backgroundNaturalWidth <= 0 || backgroundNaturalHeight <= 0}
+          onClick={() =>
+            syncPosterDimensionsToBackground(
+              backgroundNaturalWidth,
+              backgroundNaturalHeight,
+            )
+          }
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          画布/导出匹配背景分辨率
+        </button>
+        <p className="text-[10px] leading-relaxed text-slate-500">
+          建议画布与导出等于背景原图尺寸，避免导出过大且背景发糊。上传背景后会自动匹配（未加载模板时）。
+        </p>
       </section>
 
       <section className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -450,7 +496,7 @@ export function ControlPanel({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={!productQuad || brushDrawing}
+            disabled={!productQuad || brushDrawing || occlusionDrawing}
             onClick={() => beginBrushDrawingSession()}
             className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white shadow hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
@@ -595,6 +641,124 @@ export function ControlPanel({
             />
           </Field>
         </div>
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          前景遮挡（手指恢复）
+        </h2>
+        <p className="text-xs leading-relaxed text-slate-600">
+          沿手指外轮廓拖动画一笔，松手自动闭合并平滑圆角；可多次绘制覆盖多个手指。
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={!productQuad || occlusionDrawing || brushDrawing}
+            onClick={() => beginOcclusionDrawingSession()}
+            className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-medium text-white shadow hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            开始标记遮挡
+          </button>
+          <button
+            type="button"
+            disabled={!occlusionDrawing}
+            onClick={() => cancelOcclusionDrawing()}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+          >
+            取消当前笔划
+          </button>
+          <button
+            type="button"
+            disabled={!productOcclusionMask?.regions.length}
+            onClick={() => removeLastOcclusionRegion()}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+          >
+            撤销上一区域
+          </button>
+          <button
+            type="button"
+            disabled={!productOcclusionMask?.regions.length}
+            onClick={() => clearProductOcclusionMask()}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+          >
+            清除全部遮挡
+          </button>
+        </div>
+        {occlusionDrawing ? (
+          <p className="text-[11px] font-medium text-amber-800">
+            在画布上按住拖动沿手指外轮廓绘制；松开即追加一个区域（至少三个转折点且面积足够才生效）。
+          </p>
+        ) : null}
+        {productOcclusionMask && productOcclusionMask.regions.length > 0 ? (
+          <p className="text-[10px] text-slate-500">
+            已标记 {productOcclusionMask.regions.length} 个遮挡区域
+          </p>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="边缘羽化（0–12 px）">
+            <Num
+              min={0}
+              max={12}
+              step={0.5}
+              value={productOcclusionMask?.feather ?? 2}
+              onChange={(v) => {
+                const feather = Math.min(12, Math.max(0, v))
+                if (productOcclusionMask) {
+                  patchProductOcclusionMask({ feather })
+                }
+              }}
+              disabled={!productOcclusionMask?.regions.length}
+            />
+          </Field>
+          <Field label="边缘内缩（0–6 px）">
+            <Num
+              min={0}
+              max={6}
+              step={0.5}
+              value={productOcclusionMask?.edgeInset ?? 1.5}
+              onChange={(v) => {
+                const edgeInset = Math.min(6, Math.max(0, v))
+                if (productOcclusionMask) {
+                  patchProductOcclusionMask({ edgeInset })
+                }
+              }}
+              disabled={!productOcclusionMask?.regions.length}
+            />
+          </Field>
+          <Field label="接触阴影宽度（0–16 px）">
+            <Num
+              min={0}
+              max={16}
+              step={0.5}
+              value={productOcclusionMask?.contactShadowSpread ?? 5}
+              onChange={(v) => {
+                const contactShadowSpread = Math.min(16, Math.max(0, v))
+                if (productOcclusionMask) {
+                  patchProductOcclusionMask({ contactShadowSpread })
+                }
+              }}
+              disabled={!productOcclusionMask?.regions.length}
+            />
+          </Field>
+          <Field label="接触阴影强度（0–1）">
+            <Num
+              min={0}
+              max={1}
+              step={0.05}
+              value={productOcclusionMask?.contactShadowOpacity ?? 0.22}
+              onChange={(v) => {
+                const contactShadowOpacity = Math.min(1, Math.max(0, v))
+                if (productOcclusionMask) {
+                  patchProductOcclusionMask({ contactShadowOpacity })
+                }
+              }}
+              disabled={!productOcclusionMask?.regions.length}
+            />
+          </Field>
+        </div>
+        <p className="text-[10px] leading-relaxed text-slate-500">
+          边缘羽化与内缩用于去污过渡；接触阴影在新卡片上模拟手指按压暗部。背景图需允许跨域读取像素。
+        </p>
       </section>
 
       <section className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">

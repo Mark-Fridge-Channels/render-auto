@@ -41,6 +41,30 @@ export type ProductBrushShadow = {
   color: string
 }
 
+/** Single closed region to restore foreground pixels from the original background. */
+export type ProductOcclusionRegion = {
+  points: Point[]
+}
+
+/**
+ * Template-level foreground occlusion — keeps fingers/hands above the warped product.
+ * `null` disables restore (legacy templates behave unchanged).
+ */
+export type ProductOcclusionMask = {
+  regions: ProductOcclusionRegion[]
+  /**
+   * Edge feather in logical canvas px; blends restored pixels with the warped product
+   * at the boundary to reduce color spill. Default 2.
+   */
+  feather: number
+  /** Inward shrink of restore core before feather (px); skips contaminated edge pixels. */
+  edgeInset?: number
+  /** Contact-shadow ring width outside the finger (canvas px). */
+  contactShadowSpread?: number
+  /** 0–1 strength darkening the new card under the finger edge. */
+  contactShadowOpacity?: number
+}
+
 /** Centered rounded-rect border drawn above title/logo; toggle per template via `enabled`. */
 export type DecorFrameConfig = {
   enabled: boolean
